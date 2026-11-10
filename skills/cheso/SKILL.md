@@ -21,8 +21,10 @@ Do not use it for code changes, quick factual answers, or anything you can do di
   2. Right away run `cheso login --wait --timeout 540 --json` (in Claude Code pass a 600000 ms Bash timeout). It
      returns when they approve. Exit 6: still waiting, run it again. `error.kind` `login_denied`: they refused, stop.
      `login_expired`: start again from step 1.
-  Never open the page or enter the code yourself; only the user approves. Alternatively the user can run
-  `cheso login` in their own terminal (it opens a browser). Add `--site cn` to every command for zhishi.qq.com.
+  The assistant initiates device login with the commands above and waits for the result, but must never open the
+  verification page, enter the code or approve authorization on the user's behalf; the user completes those steps.
+  Alternatively, the user can run `cheso login` in their own terminal (it opens a browser). Add `--site cn` to every
+  command for zhishi.qq.com.
 - Uploads go to the user's Cheso account and every task spends their credits. Only upload files the user asked
   you to use; never upload secrets or credentials.
 
