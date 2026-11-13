@@ -28,6 +28,13 @@ Do not use it for code changes, quick factual answers, or anything you can do di
 - Uploads go to the user's Cheso account and every task spends their credits. Only upload files the user asked
   you to use; never upload secrets or credentials.
 
+## Updating
+
+- CLI: `uv tool install cheso-cli -U`. Skill: `npx skills update cheso -g -y` (drop `-g` for a project install), or
+  `cheso skill install` if it was installed that way.
+- Update only when the user asks, or when a command or flag written exactly as this skill documents it fails with
+  exit 2 (the CLI is older than this skill). Do not update on every task.
+
 ## Run a task
 
 User: "Use Cheso to turn notes.pdf into an investor deck"
