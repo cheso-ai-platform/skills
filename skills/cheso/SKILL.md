@@ -30,12 +30,21 @@ Do not use it for code changes, quick factual answers, or anything you can do di
 
 ## Run a task
 
+User: "Use Cheso to turn notes.pdf into an investor deck"
+
 ```bash
-cheso task create --prompt "Make a 10-slide PPT deck for investors about ./notes.pdf, in English, clean style" \
+cheso task create --prompt "Turn notes.pdf into an investor deck" \
   --file ./notes.pdf --wait --timeout 540 --output-dir ./cheso-output --json
 ```
 
-- Write a complete prompt: topic, goal, audience, length/pages, language, style and output format.
+- `--prompt` is the user's own request, not a brief you write. Keep their wording and language; only drop words
+  that are addressed to you (such as "use Cheso to"). Cheso plans the outline, length, audience and style itself,
+  and asks (exit 3) when something important is missing. Do not add an outline, page count, audience, style,
+  tone or facts the user did not give, and do not translate, polish or expand the request: your additions
+  override Cheso's own planning and usually make the result worse.
+- Add only what the user actually said that Cheso cannot see, in their words: requirements from earlier
+  messages, or the content they refer to ("the plan we just discussed"); attach files with `--file` rather than
+  pasting them. Write a fuller brief only when the user explicitly asks you to.
 - `--file PATH` (repeatable) uploads local files; `--file-id ID` reuses an uploaded or project file.
 - `--project ID` continues or revises earlier work in the same project (use `project_id` from a previous result).
 - `--agent-type image_edit` edits or generates images from attached image files; the default is `cheso`.
