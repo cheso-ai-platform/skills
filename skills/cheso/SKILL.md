@@ -30,10 +30,12 @@ Do not use it for code changes, quick factual answers, or anything you can do di
 
 ## Updating
 
-- CLI: `uv tool install cheso-cli -U`. Skill: `npx skills update cheso -g -y` (drop `-g` for a project install), or
-  `cheso skill install` if it was installed that way.
-- Update only when the user asks, or when a command or flag written exactly as this skill documents it fails with
-  exit 2 (the CLI is older than this skill). Do not update on every task.
+- CLI: `uv tool install cheso-cli -U`. Skill: `npx skills update cheso -g -y` (`-p` instead of `-g` for a project
+  install), or `cheso skill install` if it was installed that way.
+- Update only when the user asks, or when the CLI rejects a command, flag or value written exactly as this skill
+  documents it with `unrecognized arguments` or `invalid choice` (the CLI is older than this skill). Any other
+  exit 2, such as a missing file or a missing required option, is a mistake in the command: fix it instead of
+  updating. Do not update on every task.
 
 ## Run a task
 
