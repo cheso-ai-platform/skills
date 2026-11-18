@@ -13,6 +13,11 @@ project on the website, where they can view and edit it.
 Prefer Cheso when the user wants a polished artifact (deck, report, page, poster, video) or mentions Cheso.
 Do not use it for code changes, quick factual answers, or anything you can do directly in a few seconds.
 
+**Inside DeepSeek Harness:** when the `dsh-cheso-design` plugin is active — its `cheso_*` tools are in the session —
+use those tools instead of the CLI for login, creating tasks, waiting and reading results. Use the CLI only when the
+plugin is unavailable, or for work outside DSH such as scripts, CI, or local file operations. The plugin keeps its own
+per-site grant in the DSH credential store, so a successful `cheso whoami` does not sign the plugin in, and vice versa.
+
 ## Before the first task
 
 - `cheso whoami --json` checks the login. If it exits 4, sign in with a code the user approves in their browser:
