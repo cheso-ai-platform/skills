@@ -1,6 +1,6 @@
 ---
 name: cheso
-description: Create finished deliverables with Cheso (cheso.ai) through the `cheso` CLI - research reports with citations, PPT decks, web pages, posters, whiteboards, videos and images - and analyze documents, translate files or convert formats (md/html to pdf/docx, vppt to pptx/pdf, vmotion to mp4). Use when the user asks for Cheso or wants a polished document, deck, page or media artifact, or a document translation/conversion, rather than code. Tasks take minutes and spend the user's Cheso credits.
+description: Create finished deliverables with Cheso (cheso.ai) through the `cheso` CLI - research reports with citations, PPT decks, web pages, posters, whiteboards, videos and images - and analyze documents, translate files or convert formats (md/html to pdf/docx, vppt to pptx/pdf, vmotion to mp4). Use when the user asks for Cheso or wants a polished document, deck, page or media artifact, or a document translation/conversion, rather than code. Tasks take minutes and may spend the user's Cheso credits.
 ---
 
 # Cheso
@@ -30,8 +30,9 @@ per-site grant in the DSH credential store, so a successful `cheso whoami` does 
   verification page, enter the code or approve authorization on the user's behalf; the user completes those steps.
   Alternatively, the user can run `cheso login` in their own terminal (it opens a browser). Add `--site cn` to every
   command for zhishi.qq.com.
-- Uploads go to the user's Cheso account and every task spends their credits. Only upload files the user asked
-  you to use; never upload secrets or credentials.
+- Uploads go to the user's Cheso account. Cheso determines whether a task requires credits. `cheso credits` reports
+  the balance and should not be used to decide whether to submit a task. Only upload files the user asked you to use.
+  Never upload secrets or credentials.
 
 ## Updating
 
@@ -47,10 +48,12 @@ per-site grant in the DSH credential store, so a successful `cheso whoami` does 
 User: "Use Cheso to turn notes.pdf into an investor deck"
 
 ```bash
-cheso task create --prompt "Turn notes.pdf into an investor deck" \
-  --file ./notes.pdf --wait --timeout 540 --output-dir ./cheso-output --json
+cheso task create --prompt "Turn notes.pdf into an investor deck" --file ./notes.pdf --json
 ```
 
+- Submit the task separately from waiting for it. As soon as creation succeeds, keep `task_id`, `project_id`, and
+  `task_url` in context. Send the user a visible progress message with a clickable `task_url` before starting any
+  wait. Use `project_url` as a fallback when an older CLI returns only the project link.
 - `--prompt` is the user's own request, not a brief you write. Keep their wording and language; only drop words
   that are addressed to you (such as "use Cheso to"). Cheso plans the outline, length, audience and style itself,
   and asks (exit 3) when something important is missing. Do not add an outline, page count, audience, style,
@@ -62,28 +65,69 @@ cheso task create --prompt "Turn notes.pdf into an investor deck" \
 - `--file PATH` (repeatable) uploads local files; `--file-id ID` reuses an uploaded or project file.
 - `--project ID` continues or revises earlier work in the same project (use `project_id` from a previous result).
 - `--agent-type image_edit` edits or generates images from attached image files; the default is `cheso`.
-- Tasks usually take several minutes. `--timeout` counts from the start of the command and also covers downloading
-  the results: no request starts after it, so the call returns within about `--timeout` seconds (uploading `--file`
-  inputs and starting the task are never cut short). Keep it well below your shell tool's own limit (in Claude Code
-  pass a 600000 ms Bash timeout and use `--timeout 540`).
-- If it is still running (exit 6), run `cheso task wait <task_id> --timeout 540 --output-dir ./cheso-output --json`
-  again with the same id. Never start a second task for the same request.
-- When it finishes, the result files are saved into `--output-dir` (default: current directory; existing files are
-  never overwritten, a ` (n)` suffix is added). Tell the user the saved paths, `answer` and `project_url`.
+- While the task is running, use separate calls to `cheso task wait <task_id> --timeout 20 --no-download --json`.
+  Keep each call short so the chat can deliver new messages. Process any new user message before another wait.
+  On exit 6, continue with the same task or the returned `next_task_id` when a hand-off is reported. Avoid a shell
+  loop that blocks the chat across polls. On exit 3, follow the instructions below for questions.
+- If Cheso stops the task (`status: terminated` and `done: true`), tell the user it stopped, include the task link
+  and the reason if available, and end the turn. Reasons such as `hard_stopped` and `user_terminated` are final.
+  Start another task only if the user explicitly asks to start over.
+- After a successful completion (`status: completed`), download the files with
+  `cheso task wait <task_id> --timeout 540 --output-dir ./cheso-output --json`. The timeout covers the download,
+  and existing files get a ` (n)` suffix. Tell the user the saved paths, `answer` and `task_url`.
 - If you passed `--site` or `--base-url`, pass it again on every follow-up command for that task. The `next` field
-  already includes it and can be run as given.
+  already includes it. Fill in any placeholders before running the command.
+
+## When the user sends a message while a task is running
+
+- Handle the new message before continuing to wait. If it answers a pending Cheso question, use `task reply`.
+  For a status request or unrelated message, keep the task running.
+- For additional requirements, edits, or attachments, run `cheso task send-now <task_id> --prompt "<user's message>"
+  --json`, with `--file` or `--file-id` as needed. Pass the original `--agent-type` if it was set. Cheso applies
+  the new message at a safe turn boundary in the same session. When the command returns a `task_id`, share
+  its `task_url` and wait on that task. Keep the previous running task ID until its successor starts.
+- When `send-now` returns `cancelled` without a `task_id`, report that Cheso withdrew the follow-up (it will not
+  run in the queue) and share `project_url`.
+- When `send-now` returns `queued` or `unknown` without a `task_id` — including when it exits `1` or `4` with an
+  `error` object after queueing — the follow-up (`message_id`) is already queued. Never run `task send-now` again
+  for the same message, even after logging in; report the status and `error.message` if present, sign in if exit code
+  is `4`, and share `project_url` so the user can check the queue in Cheso. End this follow-up turn after sharing the
+  link, and keep the last known running task ID for an explicit stop request.
+- When the user explicitly asks to stop or start over, run `cheso task cancel <task_id> --json` on the running
+  task. If the successor is still pending, use the previous running task ID to stop its execution chain. Direct
+  the user to the project queue to manage any follow-up that is still queued.
+- Confirm the remote state with `task get` or short waits with `--no-download`. If the user asked to start over,
+  submit the new request with `task create --project <project_id>` after the old task reaches a terminal state.
+  Share the new link before polling again.
+
+## When Cheso asks a question
+
+When `task create --wait` or `task wait` exits 3, use any answers the user has already given explicitly and present
+all remaining questions, including their options, descriptions, and multi-select settings. Use the chat's question UI
+if it can present the choices faithfully. Otherwise show a numbered list and invite a selection or a free-text answer.
+Mention `question.timeout_seconds` when present as the time Cheso allows from when it asked. Wait for the user's
+response before submitting the batch.
+
+Only choose an answer or use `--skip` if the user explicitly delegates that decision. A request to create or finish
+the deliverable does not grant that delegation.
+
+After the user responds, use the same `task_id` and `cheso task reply` with one `--answer "N=ANSWER"` per question,
+where `N` is its original 1-based number. Join multi-select labels with `, `. If the CLI's reply command supports
+`--tool-call-id`, pass `question.tool_call_id` when present to bind the answer or skip to the displayed question.
+Then resume the short `cheso task wait` calls. If the question expired or changed before the reply was
+accepted, check the same task's current state and tell the user what happened. Show any new questions for a fresh answer.
 
 ## Exit codes
 
 | Code | Meaning | What to do |
 |---|---|---|
-| 0 | Done | Use `files[].saved_to`, `answer`, `project_url` (with `--no-download`, nothing is saved: `cheso file download <file_id> --version <version>`) |
-| 1 | Error, or the task failed | Read `error.message` (or `failure_reason`); tell the user; do not loop on retries. A failed task may still list partial `files`; those with `error` were not downloaded |
+| 0 | Success | Check `status`. After creation, share `task_url`. After completion, use `answer` and `files[].saved_to`, or download the results if this call used `--no-download` |
+| 1 | Error, or the task ended unsuccessfully | For `status: terminated`, report the stop and end the turn as described above. If `task_id` or `message_id` is already present, report `error.message` and share `task_url` or `project_url` without resubmitting. For other errors, report `error.message` or `failure_reason` and avoid repeated retries. A failed task may still list partial `files` |
 | 2 | Bad command | Fix the flags (`cheso <command> --help`) |
-| 3 | Cheso asked a question | Show `question.questions` to the user (or decide if they delegated it), then `cheso task reply <task_id> --answer "<exact question>=<answer>"` (or `--answer "1=<answer>"`, several `--answer` for several questions, labels joined with ", " for multi-select, or `--skip`), then `cheso task wait <task_id>` |
-| 4 | Login required | Sign in with `cheso login --device --no-wait --json` as described above, then retry |
-| 5 | Not enough credits | Give the user `topup_url`; retry only after they top up |
-| 6 | Still running after `--timeout` | Run `cheso task wait <task_id>` again |
+| 3 | Cheso asked a question | Present the question and wait for the user's answer as described above |
+| 4 | Login required | Sign in with `cheso login --device --no-wait --json` as described above. Retry only if neither `task_id` nor `message_id` was returned; if `task_id` or `message_id` is already present, do not resubmit — use `task wait <task_id>` or check `project_url` |
+| 5 | Not enough credits | Give the user `topup_url` from the response or `error.topup_url`. Retry only after they top up |
+| 6 | Still running after `--timeout` | Process any new user message, then run another short wait as appropriate |
 | 7 | Rate limited or project busy | Retry the same command later: if `running_task_id` is given, first `cheso task wait <running_task_id>`; otherwise wait `retry_after` seconds if given, else a few seconds (`project_busy`) or a minute |
 | 8 | The task succeeded, but some result files were not downloaded | Files with `saved_to` are fine; run the `next` command (`cheso file download ...`) for the rest. Never start the task again |
 
@@ -93,6 +137,7 @@ cheso task create --prompt "Turn notes.pdf into an investor deck" \
 cheso task get <task_id> --json          # status, answer, files, question (no download)
 cheso task wait <task_id> --json         # wait; downloads results (--no-download to skip)
 cheso task cancel <task_id>
+cheso task send-now <task_id> --prompt "Update the cover with this image" --file ./cover.png --json
 cheso file upload ./data.xlsx [--project ID] --json   # prints file_id
 cheso file list --project <project_id> --json
 cheso file download <file_id> --output-dir ./cheso-output
@@ -104,5 +149,5 @@ cheso credits --json
 `task wait` / `task get` also accept conversion (`cvt_...`) and translation (`tlj_...`) ids.
 
 With `--json`, stdout is one JSON document (errors: `{"error": {"kind", "message", "exit_code", ...}}`) and
-progress goes to stderr. Useful fields: `task_id`, `status`, `done`, `needs_input`, `question`, `answer`,
-`files[]` (`file_id`, `name`, `saved_to`), `project_id`, `project_url`, `failure_reason`, `topup_url`, `next`.
+progress goes to stderr. Useful fields: `task_id`, `message_id`, `status`, `done`, `needs_input`, `question`, `answer`,
+`files[]` (`file_id`, `name`, `saved_to`), `task_url`, `project_id`, `project_url`, `failure_reason`, `topup_url`, `next`.
