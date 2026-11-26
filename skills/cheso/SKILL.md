@@ -18,26 +18,45 @@ use those tools instead of the CLI for login, creating tasks, waiting and readin
 plugin is unavailable, or for work outside DSH such as scripts, CI, or local file operations. The plugin keeps its own
 per-site grant in the DSH credential store, so a successful `cheso whoami` does not sign the plugin in, and vice versa.
 
-## Before the first task
+## Setup and login
 
-- `cheso whoami --json` checks the login. If it exits 4, sign in with a code the user approves in their browser:
-  1. Run `cheso login --device --no-wait --json`. Show the user `verification_uri` and `user_code` and ask them to
-     open the page (on any device), sign in to Cheso and enter the code.
-  2. Right away run `cheso login --wait --timeout 540 --json` (in Claude Code pass a 600000 ms Bash timeout). It
-     returns when they approve. Exit 6: still waiting, run it again. `error.kind` `login_denied`: they refused, stop.
-     `login_expired`: start again from step 1.
-  The assistant initiates device login with the commands above and waits for the result, but must never open the
-  verification page, enter the code or approve authorization on the user's behalf; the user completes those steps.
-  Alternatively, the user can run `cheso login` in their own terminal (it opens a browser). Add `--site cn` to every
-  command for zhishi.qq.com.
+`cheso` resolves the target site in order: `--base-url <url>` or `--site cn|global`, then `CHESO_BASE_URL`, then
+the site from the last `cheso login`, falling back to `global` (`cheso.ai`) only when none of those are set. Pass
+`--site cn` (for `zhishi.qq.com`), `--site global`, or `--base-url <url>` consistently on every `cheso` command only
+when the user specifies a site; otherwise omit them so `cheso` keeps `CHESO_BASE_URL` or the remembered site.
+
+If `cheso` is not installed yet, or the user asks to install or set up Cheso:
+
+1. Install the CLI: run `uv tool install cheso-cli -U` (or `pipx install cheso-cli` if `uv` is unavailable).
+2. Install the skill (if not already installed): `npx skills add cheso-ai-platform/skills --skill cheso -g -y` (omit `-g`
+   for a project install).
+3. Authenticate — run `cheso whoami --json` first (with `--site` or `--base-url` if the user specified one); if it exits 4:
+   - Interactive machine with a browser: run `cheso login` (with the same `--site` or `--base-url` if specified) and
+     let the user complete and approve the sign-in in the browser.
+   - SSH session, container, or headless environment:
+     1. Run `cheso login --device --no-wait --json` (with the same `--site` or `--base-url` if specified). Show the
+        user `verification_uri` and `user_code` and ask them to open the page (on any device), sign in to Cheso,
+        enter the code, and approve access.
+     2. Right away run `cheso login --wait --timeout 540 --json` (in Claude Code pass a 600000 ms Bash timeout; keep
+        the same `--site` or `--base-url` if used). It returns when they approve. Exit 6: still waiting, run it
+        again. `error.kind` `login_denied`: they refused, stop. `login_expired`: start again from step 1.
+     Never open the verification page, enter the code or approve authorization on the user's behalf.
+4. Verify the setup by running `cheso whoami` (with the same `--site` or `--base-url` if specified) and let the user
+   know when it is ready.
+
+Before running a task (when `cheso` is already installed):
+
+- `cheso whoami --json` checks the login; if it exits 4, follow step 3 above without adding `--site global` unless
+  the user explicitly asked for `global`, so any `CHESO_BASE_URL` or remembered site is preserved. Do not reinstall
+  or update on every task.
 - Uploads go to the user's Cheso account. Cheso determines whether a task requires credits. `cheso credits` reports
   the balance and should not be used to decide whether to submit a task. Only upload files the user asked you to use.
   Never upload secrets or credentials.
 
 ## Updating
 
-- CLI: `uv tool install cheso-cli -U`. Skill: `npx skills update cheso -g -y` (`-p` instead of `-g` for a project
-  install), or `cheso skill install` if it was installed that way.
+- CLI: `uv tool install cheso-cli -U`. Skill: `npx skills update cheso -g -y` (omit `-g` for a project install), or
+  `cheso skill install` if it was installed that way.
 - Update only when the user asks, or when the CLI rejects a command, flag or value written exactly as this skill
   documents it with `unrecognized arguments` or `invalid choice` (the CLI is older than this skill). Any other
   exit 2, such as a missing file or a missing required option, is a mistake in the command: fix it instead of
@@ -102,18 +121,24 @@ cheso task create --prompt "Turn notes.pdf into an investor deck" --file ./notes
 
 ## When Cheso asks a question
 
-When `task create --wait` or `task wait` exits 3, use any answers the user has already given explicitly and present
-all remaining questions, including their options, descriptions, and multi-select settings. Use the chat's question UI
-if it can present the choices faithfully. Otherwise show a numbered list and invite a selection or a free-text answer.
-Mention `question.timeout_seconds` when present as the time Cheso allows from when it asked. Wait for the user's
-response before submitting the batch.
+When `task create --wait` or `task wait` exits 3, check `question.expires_at` before presenting the batch and again
+before submitting a reply. It is a Unix timestamp in seconds and may be fractional. If the deadline has passed
+according to the local clock, run `cheso task get <task_id> --json` and follow the current task status. If it still
+lists the same batch, submit a reply the user already gave or wait briefly before checking the task again. Check
+a new batch against its own deadline.
 
-Only choose an answer or use `--skip` if the user explicitly delegates that decision. A request to create or finish
+Use any answers the user has already given explicitly and present the remaining questions, including their options,
+descriptions, and multi-select settings. Use the chat's question UI if it can present the choices faithfully.
+Otherwise show a numbered list and invite a selection or a free-text answer. If only `question.timeout_seconds` is
+present, it gives the total time allowed from when Cheso asked. Wait for the user's response before submitting the batch.
+
+Only choose an answer or use `--skip` if the user explicitly delegates that decision, and never use `--skip` when
+`question.required` is true (required questions must be answered). A request to create or finish
 the deliverable does not grant that delegation.
 
-After the user responds, use the same `task_id` and `cheso task reply` with one `--answer "N=ANSWER"` per question,
-where `N` is its original 1-based number. Join multi-select labels with `, `. If the CLI's reply command supports
-`--tool-call-id`, pass `question.tool_call_id` when present to bind the answer or skip to the displayed question.
+After the user responds, use the same `task_id` and `cheso task reply` with one `--answer "N=ANSWER"` per answered
+question, where `N` is its original 1-based number. Join multi-select labels with `, `. If the CLI's reply command
+supports `--tool-call-id`, pass `question.tool_call_id` when present to bind the answer or skip to the displayed question.
 Then resume the short `cheso task wait` calls. If the question expired or changed before the reply was
 accepted, check the same task's current state and tell the user what happened. Show any new questions for a fresh answer.
 
